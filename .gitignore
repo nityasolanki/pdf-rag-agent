@@ -1,0 +1,16 @@
+# User uploaded PDFs — keep off GitHub
+uploads/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Environment variables — API keys
+.env
+
+# Virtual environment
+venv/
+.venv/
+
+# OS
+.DS_Store

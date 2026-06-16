@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>PDF RAG Agent — Qdrant</title>
+<style>
+  :root{
+    --bg:#0f1117;--surface:#1a1d27;--surface2:#232636;--border:#2e3248;
+    --accent:#6c63ff;--accent2:#a78bfa;--green:#22c55e;--yellow:#f59e0b;
+    --red:#ef4444;--text:#e2e8f0;--muted:#94a3b8;--radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 22px;display:flex;align-items:center;gap:11px}
+  .logo{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px}
+  header h1{font-size:18px;font-weight:700}
+  header span{font-size:11px;color:var(--muted);margin-left:5px}
+  .badge{font-size:11px;padding:3px 9px;border-radius:20px;background:var(--surface2);border:1px solid var(--border)}
+  .badge.ok{color:var(--green);border-color:var(--green)}
+  .hbadges{margin-left:auto;display:flex;gap:7px}
+
+  .container{display:flex;flex:1;height:calc(100vh - 60px);overflow:hidden}
+  .sidebar{width:310px;min-width:270px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px;gap:16px;overflow-y:auto}
+  h2{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+
+  .dropzone{border:2px dashed var(--border);border-radius:var(--radius);padding:18px 12px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+  .dropzone:hover,.dropzone.drag{border-color:var(--accent);background:rgba(108,99,255,.06)}
+  .dropzone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .dropzone .icon{font-size:24px;margin-bottom:5px}
+  .dropzone p{font-size:12px;color:var(--muted)}
+  .dropzone p strong{color:var(--text)}
+
+  .file-list{display:flex;flex-direction:column;gap:6px}
+  .file-item{display:flex;align-items:center;gap:7px;padding:8px 10px;background:var(--surface2);border-radius:7px;font-size:12px;border:1px solid var(--border)}
+  .fi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fi-status{font-size:10px;padding:2px 6px;border-radius:10px;white-space:nowrap}
+  .fi-status.pending{background:rgba(245,158,11,.15);color:var(--yellow)}
+  .fi-status.indexing{background:rgba(108,99,255,.15);color:var(--accent2)}
+  .fi-status.ok{background:rgba(34,197,94,.15);color:var(--green)}
+  .fi-status.error{background:rgba(239,68,68,.15);color:var(--red)}
+  .fi-remove{cursor:pointer;color:var(--muted);background:none;border:none;font-size:12px}
+  .fi-remove:hover{color:var(--red)}
+
+  .pdf-index{display:flex;flex-direction:column;gap:6px}
+  .pdf-card{padding:9px 11px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:all .15s;font-size:12px}
+  .pdf-card:hover{border-color:var(--accent)}
+  .pdf-card.active{border-color:var(--accent);background:rgba(108,99,255,.1)}
+  .pdf-card .pc-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pdf-card .pc-id{font-size:10px;color:var(--muted);font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pdf-card .pc-row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:5px}
+  .pdf-card .pc-chunks{font-size:10px;color:var(--muted)}
+  .pdf-del{background:none;border:none;cursor:pointer;color:var(--muted);font-size:11px;padding:1px 4px;border-radius:4px}
+  .pdf-del:hover{color:var(--red);background:rgba(239,68,68,.1)}
+  .search-scope{font-size:11px;color:var(--accent2);margin-top:2px}
+
+  .session-box{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px;font-size:11px;color:var(--muted);word-break:break-all}
+  .session-box strong{color:var(--accent2)}
+
+  .btn{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .2s;display:flex;align-items:center;gap:6px;justify-content:center}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{background:#5b52e0}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-danger{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+  .btn-danger:hover{background:rgba(239,68,68,.22)}
+  .btn-sm{padding:5px 10px;font-size:11px;border-radius:6px}
+
+  .chat-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:13px}
+  .messages::-webkit-scrollbar{width:5px}
+  .messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  .msg{display:flex;gap:9px;max-width:85%}
+  .msg.user{align-self:flex-end;flex-direction:row-reverse}
+  .msg.assistant{align-self:flex-start}
+  .msg-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+  .msg.user .msg-avatar{background:var(--accent)}
+  .msg.assistant .msg-avatar{background:var(--surface2);border:1px solid var(--border)}
+  .msg-body{display:flex;flex-direction:column;gap:3px}
+  .msg-bubble{padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .msg.user .msg-bubble{background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+  .msg.assistant .msg-bubble{background:var(--surface2);border:1px solid var(--border);border-bottom-left-radius:3px}
+  .msg-meta{font-size:10px;color:var(--muted);display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+  .msg.user .msg-meta{justify-content:flex-end}
+  .source-tag{padding:2px 7px;border-radius:10px;font-size:9.5px;font-weight:700}
+  .source-tag.pdf{background:rgba(108,99,255,.2);color:var(--accent2)}
+  .source-tag.llm{background:rgba(34,197,94,.15);color:var(--green)}
+  .source-tag.error{background:rgba(239,68,68,.15);color:var(--red)}
+  .src-file{font-size:10px;color:var(--muted);background:var(--surface);border:1px solid var(--border);padding:1px 6px;border-radius:8px}
+
+  .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;color:var(--muted);text-align:center;padding:36px}
+  .empty-state .es-icon{font-size:40px}
+  .empty-state h3{font-size:16px;color:var(--text)}
+  .empty-state p{font-size:13px;max-width:320px;line-height:1.6}
+
+  .input-bar{border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:9px;align-items:flex-end;background:var(--surface)}
+  .input-wrap{flex:1;display:flex;flex-direction:column;gap:5px}
+  .scope-pill{font-size:11px;color:var(--accent2);background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.3);border-radius:20px;padding:2px 10px;display:inline-flex;align-items:center;gap:5px;width:fit-content;cursor:pointer}
+  .scope-pill .sp-clear{font-size:12px;color:var(--muted);line-height:1}
+  .scope-pill .sp-clear:hover{color:var(--red)}
+  textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 13px;color:var(--text);font-size:13px;resize:none;outline:none;font-family:inherit;line-height:1.5;transition:border-color .2s;max-height:100px}
+  textarea:focus{border-color:var(--accent)}
+  textarea::placeholder{color:var(--muted)}
+  .send-btn{width:40px;height:40px;border-radius:9px;background:var(--accent);border:none;cursor:pointer;color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
+  .send-btn:hover{background:#5b52e0}
+  .send-btn:disabled{opacity:.4;cursor:not-allowed}
+  .typing{display:flex;gap:4px;padding:10px 14px}
+  .typing span{width:6px;height:6px;background:var(--muted);border-radius:50%;animation:bounce .9s infinite}
+  .typing span:nth-child(2){animation-delay:.15s}
+  .typing span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+  #toast{position:fixed;bottom:18px;right:18px;padding:10px 16px;border-radius:9px;font-size:13px;font-weight:500;transform:translateY(14px);opacity:0;transition:all .3s;pointer-events:none;z-index:999}
+  #toast.show{transform:translateY(0);opacity:1}
+  #toast.success{background:rgba(34,197,94,.92);color:#fff}
+  #toast.error{background:rgba(239,68,68,.92);color:#fff}
+  #toast.info{background:rgba(108,99,255,.92);color:#fff}
+  .progress{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:5px}
+  .progress-bar{height:100%;background:var(--accent);border-radius:2px;transition:width .4s}
+  hr.divider{border:none;border-top:1px solid var(--border);margin:2px 0}
+
+  /* Animated progress bar that pulses while waiting */
+  @keyframes indeterminate{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}
+  .progress-bar.indeterminate{animation:indeterminate 1.4s ease infinite;width:25% !important}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🤖</div>
+  <h1>PDF RAG Agent</h1>
+  <span>Qdrant · Groq · FastAPI</span>
+  <div class="hbadges">
+    <div class="badge" id="groqBadge">Groq…</div>
+    <div class="badge" id="qdrantBadge">Qdrant…</div>
+  </div>
+</header>
+
+<div class="container">
+  <aside class="sidebar">
+    <div>
+      <h2>📄 Upload PDFs (max 5)</h2>
+      <div style="font-size:11px;color:var(--muted);margin:4px 0 9px">Each PDF gets a unique ID tracked in Qdrant.</div>
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".pdf" multiple/>
+        <div class="icon">📂</div>
+        <p><strong>Click or drag</strong> PDFs here</p>
+      </div>
+    </div>
+
+    <div id="fileListSection" style="display:none">
+      <h2>📋 Selected</h2>
+      <div class="file-list" id="fileList"></div>
+      <div class="progress" id="progressWrap" style="display:none">
+        <div class="progress-bar" id="progressBar" style="width:0%"></div>
+      </div>
+      <!-- Status message shown during long indexing -->
+      <div id="indexingMsg" style="display:none;font-size:11px;color:var(--accent2);margin-top:6px;text-align:center"></div>
+      <button class="btn btn-primary" id="uploadBtn" style="margin-top:8px;width:100%">⬆ Upload & Index</button>
+    </div>
+
+    <div id="pdfIndexSection" style="display:none">
+      <h2>🗂 PDF Index</h2>
+      <div style="font-size:11px;color:var(--muted);margin:3px 0 8px">Click a PDF to search only that document.</div>
+      <div class="pdf-index" id="pdfIndex"></div>
+      <div id="scopeNote" class="search-scope" style="display:none"></div>
+    </div>
+
+    <div id="sessionSection" style="display:none">
+      <h2>🔑 Session</h2>
+      <div class="session-box">ID: <strong id="sessionIdDisplay"></strong></div>
+    </div>
+
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px">
+      <button class="btn btn-ghost" id="newSessionBtn">＋ New Session</button>
+      <button class="btn btn-danger" id="clearBtn" style="display:none">🗑 Clear Session</button>
+    </div>
+  </aside>
+
+  <main class="chat-area">
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <div class="es-icon">💬</div>
+        <h3>Start a conversation</h3>
+        <p>Upload PDFs on the left. Each PDF gets its own ID in Qdrant — click one to target it, or ask across all.</p>
+      </div>
+    </div>
+    <div class="input-bar">
+      <div class="input-wrap">
+        <div id="scopePill" style="display:none" class="scope-pill">
+          <span id="scopePillText"></span>
+          <span class="sp-clear" onclick="clearScope()">✕</span>
+        </div>
+        <textarea id="questionInput" rows="1" placeholder="Upload PDFs first…" disabled></textarea>
+      </div>
+      <button class="send-btn" id="sendBtn" disabled>➤</button>
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '';
+let sessionId = '', pendingFiles = [], indexed = false;
+let pdfRegistry = {};
+let activePdfId = null;
+
+// ── Health ────────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const d = await fetch(API + '/health').then(r => r.json());
+    const gb = document.getElementById('groqBadge');
+    gb.textContent = d.groq_reachable ? '✓ Groq' : (d.groq_key_set ? '⚠ Groq key invalid' : '⚠ No Groq key');
+    gb.className = 'badge' + (d.groq_reachable ? ' ok' : '');
+    const qb = document.getElementById('qdrantBadge');
+    qb.textContent = d.qdrant_ok
+      ? `✓ Qdrant (${d.qdrant_mode})${d.qdrant_points != null ? ' ' + d.qdrant_points + ' pts' : ''}`
+      : '⚠ Qdrant error';
+    qb.className = 'badge' + (d.qdrant_ok ? ' ok' : '');
+  } catch {}
+}
+checkHealth();
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info', duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show ' + type;
+  setTimeout(() => el.className = '', duration);
+}
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('drag'); handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(files) {
+  const pdfs = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  if (!pdfs.length) { toast('Select PDF files only.', 'error'); return; }
+  const combined = [...pendingFiles, ...pdfs];
+  pendingFiles = combined.length > 5 ? (toast('Max 5 PDFs.', 'error'), combined.slice(0, 5)) : combined;
+  renderFileList(); fileInput.value = '';
+}
+
+function renderFileList() {
+  const list = document.getElementById('fileList');
+  const section = document.getElementById('fileListSection');
+  section.style.display = pendingFiles.length ? '' : 'none';
+  list.innerHTML = pendingFiles.map((f, i) => `
+    <div class="file-item">
+      <span>📄</span>
+      <span class="fi-name" title="${f.name}">${f.name}</span>
+      <span class="fi-status pending" id="fstatus-${i}">pending</span>
+      <button class="fi-remove" onclick="removeFile(${i})">✕</button>
+    </div>`).join('');
+}
+
+function removeFile(i) { pendingFiles.splice(i, 1); renderFileList(); }
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+document.getElementById('uploadBtn').addEventListener('click', uploadFiles);
+
+// Ticker shown while indexing so user knows it's still working
+let indexingTicker = null;
+function startIndexingTicker(numFiles) {
+  const msg = document.getElementById('indexingMsg');
+  msg.style.display = '';
+  let secs = 0;
+  const hints = [
+    'Extracting text from pages…',
+    'Chunking content…',
+    'Generating embeddings…',
+    'Writing to Qdrant…',
+    'Almost there…',
+  ];
+  indexingTicker = setInterval(() => {
+    secs++;
+    const hint = hints[Math.min(Math.floor(secs / 8), hints.length - 1)];
+    msg.textContent = `⏳ ${hint} (${secs}s)`;
+  }, 1000);
+}
+function stopIndexingTicker() {
+  if (indexingTicker) { clearInterval(indexingTicker); indexingTicker = null; }
+  const msg = document.getElementById('indexingMsg');
+  msg.style.display = 'none';
+  msg.textContent = '';
+}
+
+async function uploadFiles() {
+  if (!pendingFiles.length) { toast('Select PDFs first.', 'error'); return; }
+  if (!sessionId) sessionId = crypto.randomUUID();
+
+  const btn = document.getElementById('uploadBtn');
+  const pw  = document.getElementById('progressWrap');
+  const pb  = document.getElementById('progressBar');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Uploading…';
+  pw.style.display = '';
+  pb.classList.add('indeterminate');
+  pb.style.width = '25%';
+
+  pendingFiles.forEach((_, i) => {
+    const el = document.getElementById('fstatus-' + i);
+    if (el) { el.textContent = 'uploading…'; el.className = 'fi-status indexing'; }
+  });
+
+  const form = new FormData();
+  pendingFiles.forEach(f => form.append('files', f));
+  form.append('session_id', sessionId);
+
+  try {
+    // Step 1 — POST /upload — returns instantly with a job_id
+    const res = await fetch(API + '/upload', { method: 'POST', body: form });
+    if (!res.ok) {
+      let detail = `Server error ${res.status}`;
+      try { const body = await res.json(); detail = body.detail || detail; } catch {}
+      throw new Error(detail);
+    }
+    const d = await res.json();
+    sessionId = d.session_id;
+    const jobId = d.job_id;
+
+    // Mark files as indexing now that upload bytes were received
+    pendingFiles.forEach((_, i) => {
+      const el = document.getElementById('fstatus-' + i);
+      if (el) { el.textContent = 'indexing…'; el.className = 'fi-status indexing'; }
+    });
+    startIndexingTicker(pendingFiles.length);
+    btn.textContent = '⏳ Indexing…';
+
+    // Step 2 — Poll /status/{job_id} every 3 seconds until done or error
+    await pollJobStatus(jobId, sessionId);
+
+  } catch (e) {
+    pb.classList.remove('indeterminate');
+    pb.style.width = '0%';
+    toast('❌ ' + e.message, 'error', 6000);
+    console.error('[Upload error]', e);
+    pendingFiles.forEach((_, i) => {
+      const el = document.getElementById('fstatus-' + i);
+      if (el) { el.textContent = 'pending'; el.className = 'fi-status pending'; }
+    });
+    stopIndexingTicker();
+    btn.disabled = false;
+    btn.textContent = '⬆ Upload & Index';
+    setTimeout(() => pw.style.display = 'none', 1200);
+  }
+}
+
+async function pollJobStatus(jobId, sid) {
+  const btn = document.getElementById('uploadBtn');
+  const pw  = document.getElementById('progressWrap');
+  const pb  = document.getElementById('progressBar');
+  const MAX_POLLS = 400;  // 400 × 1.5s = 10 minutes max
+  let   polls     = 0;
+
+  while (polls < MAX_POLLS) {
+    await new Promise(r => setTimeout(r, 1500)); // wait 1.5 seconds
+    polls++;
+
+    let job;
+    try {
+      const r = await fetch(API + '/status/' + jobId);
+      job = await r.json();
+    } catch (e) {
+      console.warn('[poll] fetch failed:', e);
+      continue;
+    }
+
+    console.log('[poll]', polls, 'status:', job.status);
+    if (job.status === 'indexing') continue; // still running — keep polling
+
+    // Done or error
+    pb.classList.remove('indeterminate');
+    stopIndexingTicker();
+
+    if (job.status === 'error') {
+      pb.style.width = '0%';
+      toast('❌ Indexing failed: ' + (job.error || 'unknown error'), 'error', 6000);
+      pendingFiles.forEach((_, i) => {
+        const el = document.getElementById('fstatus-' + i);
+        if (el) { el.textContent = 'error'; el.className = 'fi-status error'; }
+      });
+    } else {
+      // status === 'done'
+      pb.style.width = '100%';
+      job.files.forEach((f, i) => {
+        const el = document.getElementById('fstatus-' + i);
+        if (el) {
+          el.textContent = f.status === 'ok' ? `${f.chunks} chunks` : `error: ${f.detail || ''}`;
+          el.className   = 'fi-status ' + (f.status === 'ok' ? 'ok' : 'error');
+        }
+        if (f.status === 'ok') {
+          pdfRegistry[f.pdf_id] = { filename: f.filename, chunks: f.chunks };
+        }
+      });
+
+      const okCount  = job.files.filter(f => f.status === 'ok').length;
+      const errCount = job.files.length - okCount;
+
+      document.getElementById('sessionIdDisplay').textContent = sid.slice(0, 20) + '…';
+      document.getElementById('sessionSection').style.display = '';
+      document.getElementById('clearBtn').style.display = '';
+      renderPdfIndex();
+      enableChat();
+      indexed = true;
+
+      if (errCount > 0) {
+        toast(`⚠ ${okCount} indexed, ${errCount} failed.`, 'error', 5000);
+      } else {
+        toast(`✅ ${okCount} PDF(s) indexed successfully!`, 'success');
+      }
+      checkHealth();
+    }
+
+    btn.disabled = false;
+    btn.textContent = '⬆ Upload & Index';
+    setTimeout(() => pw.style.display = 'none', 1200);
+    return;
+  }
+
+  // Timed out after MAX_POLLS
+  stopIndexingTicker();
+  toast('⏱ Indexing is taking longer than expected. Try refreshing.', 'error', 8000);
+  btn.disabled = false;
+  btn.textContent = '⬆ Upload & Index';
+}
+
+// ── PDF index panel ───────────────────────────────────────────────────────────
+function renderPdfIndex() {
+  const section = document.getElementById('pdfIndexSection');
+  const container = document.getElementById('pdfIndex');
+  const ids = Object.keys(pdfRegistry);
+  section.style.display = ids.length ? '' : 'none';
+
+  container.innerHTML = ids.map(pid => {
+    const p = pdfRegistry[pid];
+    const isActive = activePdfId === pid;
+    return `
+      <div class="pdf-card ${isActive ? 'active' : ''}" id="pcard-${pid}" onclick="togglePdf('${pid}')">
+        <div class="pc-name" title="${p.filename}">📄 ${p.filename}</div>
+        <div class="pc-id" title="PDF ID: ${pid}">ID: ${pid}</div>
+        <div class="pc-row">
+          <span class="pc-chunks">${p.chunks} chunks</span>
+          <button class="pdf-del btn-sm" onclick="deletePdf(event,'${pid}')">🗑 remove</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  if (ids.length) {
+    container.insertAdjacentHTML('afterbegin', `
+      <div class="pdf-card ${activePdfId === null ? 'active' : ''}" id="pcard-all" onclick="togglePdf(null)">
+        <div class="pc-name">🔍 All PDFs (${ids.length})</div>
+        <div class="pc-id">search across entire session</div>
+      </div>
+      <hr class="divider"/>`);
+  }
+}
+
+function togglePdf(pid) {
+  activePdfId = activePdfId === pid ? null : pid;
+  renderPdfIndex(); updateScopePill();
+}
+
+function clearScope() { activePdfId = null; renderPdfIndex(); updateScopePill(); }
+
+function updateScopePill() {
+  const pill = document.getElementById('scopePill');
+  const text = document.getElementById('scopePillText');
+  if (activePdfId && pdfRegistry[activePdfId]) {
+    pill.style.display = '';
+    text.textContent = '📄 ' + pdfRegistry[activePdfId].filename;
+    document.getElementById('questionInput').placeholder = 'Ask about ' + pdfRegistry[activePdfId].filename + '…';
+  } else {
+    pill.style.display = 'none';
+    document.getElementById('questionInput').placeholder = 'Ask across all PDFs…';
+  }
+}
+
+async function deletePdf(event, pdf_id) {
+  event.stopPropagation();
+  if (!confirm('Remove this PDF from the index?')) return;
+  try {
+    await fetch(`${API}/session/${sessionId}/pdf/${pdf_id}`, { method: 'DELETE' });
+    delete pdfRegistry[pdf_id];
+    if (activePdfId === pdf_id) { activePdfId = null; updateScopePill(); }
+    renderPdfIndex();
+    toast('PDF removed from index.', 'info');
+    checkHealth();
+  } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+}
+
+// ── Chat helpers ──────────────────────────────────────────────────────────────
+function enableChat() {
+  const ta = document.getElementById('questionInput'), btn = document.getElementById('sendBtn');
+  ta.disabled = false; btn.disabled = false;
+  ta.placeholder = 'Ask across all PDFs…';
+  document.getElementById('emptyState')?.remove();
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+function appendMsg(role, text, source, sourcesUsed = []) {
+  const c = document.getElementById('messages');
+  document.getElementById('emptyState')?.remove();
+  const div = document.createElement('div'); div.className = 'msg ' + role;
+  const ts = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+  let stag = '';
+  if (role === 'assistant') {
+    stag = `<span class="source-tag ${source}">${source === 'pdf' ? '📄 PDF' : source === 'error' ? '❌ Error' : '🤖 LLM'}</span>`;
+    if (sourcesUsed.length) stag += sourcesUsed.map(f => `<span class="src-file">${f}</span>`).join('');
+  }
+  div.innerHTML = `
+    <div class="msg-avatar">${role === 'user' ? '👤' : '🤖'}</div>
+    <div class="msg-body">
+      <div class="msg-bubble">${escHtml(text)}</div>
+      <div class="msg-meta">${ts} ${stag}</div>
+    </div>`;
+  c.appendChild(div); c.scrollTop = c.scrollHeight;
+}
+
+function addTyping() {
+  const c = document.getElementById('messages');
+  const div = document.createElement('div'); div.className = 'msg assistant'; div.id = 'typing-indicator';
+  div.innerHTML = '<div class="msg-avatar">🤖</div><div class="msg-body"><div class="msg-bubble"><div class="typing"><span></span><span></span><span></span></div></div></div>';
+  c.appendChild(div); c.scrollTop = c.scrollHeight;
+}
+function removeTyping() { document.getElementById('typing-indicator')?.remove(); }
+
+// ── Send question ─────────────────────────────────────────────────────────────
+document.getElementById('questionInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+});
+document.getElementById('sendBtn').addEventListener('click', sendQuestion);
+document.getElementById('questionInput').addEventListener('input', function () {
+  this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+});
+
+async function sendQuestion() {
+  if (!indexed || !sessionId) { toast('Upload PDFs first!', 'error'); return; }
+  const ta = document.getElementById('questionInput');
+  const q = ta.value.trim(); if (!q) return;
+  ta.value = ''; ta.style.height = 'auto';
+
+  const scopeLabel = activePdfId ? pdfRegistry[activePdfId]?.filename : 'all PDFs';
+  appendMsg('user', q + (activePdfId ? `\n\n[Searching: ${scopeLabel}]` : ''));
+  addTyping();
+  document.getElementById('sendBtn').disabled = true;
+
+  const form = new FormData();
+  form.append('question', q);
+  form.append('session_id', sessionId);
+  if (activePdfId) form.append('pdf_id', activePdfId);
+
+  try {
+    const d = await fetch(API + '/ask', { method: 'POST', body: form }).then(r => r.json());
+    removeTyping();
+    appendMsg('assistant', d.answer, d.source, d.sources_used || []);
+  } catch (e) {
+    removeTyping(); appendMsg('assistant', '❌ Error: ' + e.message, 'error');
+  } finally {
+    document.getElementById('sendBtn').disabled = false; ta.focus();
+  }
+}
+
+// ── Session controls ──────────────────────────────────────────────────────────
+document.getElementById('newSessionBtn').addEventListener('click', () => {
+  if (!confirm('Start a new session? This will clear the current one.')) return;
+  resetSession();
+});
+document.getElementById('clearBtn').addEventListener('click', async () => {
+  if (!confirm('Clear all PDFs and chat history for this session?')) return;
+  if (sessionId) await fetch(API + '/session/' + sessionId, { method: 'DELETE' });
+  resetSession(); toast('Session cleared.', 'info');
+});
+
+function resetSession() {
+  sessionId = ''; pendingFiles = []; indexed = false; pdfRegistry = {}; activePdfId = null;
+  renderFileList(); renderPdfIndex(); updateScopePill();
+  document.getElementById('sessionSection').style.display = 'none';
+  document.getElementById('clearBtn').style.display = 'none';
+  document.getElementById('pdfIndexSection').style.display = 'none';
+  document.getElementById('messages').innerHTML = `
+    <div class="empty-state" id="emptyState">
+      <div class="es-icon">💬</div>
+      <h3>Start a conversation</h3>
+      <p>Upload PDFs on the left. Each PDF gets its own Qdrant ID.</p>
+    </div>`;
+  const ta = document.getElementById('questionInput'); ta.disabled = true; ta.value = '';
+  document.getElementById('sendBtn').disabled = true;
+  checkHealth();
+}
+</script>
+</body>
+</html>
